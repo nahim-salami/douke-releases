@@ -1,0 +1,59 @@
+name: Préparer la source
+description: >
+  Récupère le dépôt privé nahim-salami/douke dans source/ avec la clé de déploiement
+  (lecture seule), installe Node et, s'il y a un package-lock.json, les dépendances npm.
+
+inputs:
+  ref:
+    description: Branche, tag ou commit du dépôt privé
+    required: false
+    default: main
+  cle-deploiement:
+    description: Clé SSH de déploiement en lecture seule (secret DOUKE_SOURCE_DEPLOY_KEY)
+    required: true
+
+outputs:
+  commit:
+    description: Commit court de la source récupérée
+    value: ${{ steps.source.outputs.commit }}
+
+runs:
+  using: composite
+  steps:
+    - name: Récupérer la source privée
+      uses: actions/checkout@v7
+      with:
+        repository: nahim-salami/douke
+        ref: ${{ inputs.ref }}
+        ssh-key: ${{ inputs.cle-deploiement }}
+        path: source
+        persist-credentials: false
+
+    - name: Noter le commit
+      id: source
+      shell: bash
+      run: |
+        commit=$(git -C source rev-parse --short HEAD)
+        echo "commit=$commit" >> "$GITHUB_OUTPUT"
+        echo "Source : douke@$commit" >> "$GITHUB_STEP_SUMMARY"
+        echo "" >> "$GITHUB_STEP_SUMMARY"
+
+    - name: Installer Node (avec cache npm)
+      if: hashFiles('source/package-lock.json') != ''
+      uses: actions/setup-node@v7
+      with:
+        node-version: 24
+        cache: npm
+        cache-dependency-path: source/package-lock.json
+
+    - name: Installer Node
+      if: hashFiles('source/package-lock.json') == ''
+      uses: actions/setup-node@v7
+      with:
+        node-version: 24
+
+    - name: Installer les dépendances
+      if: hashFiles('source/package-lock.json') != ''
+      shell: bash
+      working-directory: source
+      run: bash "$GITHUB_ACTION_PATH/../../scripts/discret.sh" "Dépendances npm" npm ci --no-audit --no-fund

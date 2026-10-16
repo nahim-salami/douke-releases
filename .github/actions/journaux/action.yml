@@ -1,0 +1,33 @@
+name: Journaux chiffrés
+description: >
+  Chiffre les journaux complets du job avec le certificat du dépôt (.github/journaux-ci.crt)
+  et les dépose comme artefact pour 1 jour. Seule la clé privée, gardée hors de GitHub, les déchiffre.
+
+runs:
+  using: composite
+  steps:
+    - name: Chiffrer les journaux
+      id: chiffrer
+      shell: bash
+      run: |
+        dossier="$RUNNER_TEMP/journaux"
+        if [ ! -d "$dossier" ] || [ -z "$(find "$dossier" -name '*.log' -print -quit)" ]; then
+          echo "Aucun journal à chiffrer."
+          echo "present=false" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+        tar -czf "$RUNNER_TEMP/journaux.tar.gz" -C "$dossier" --exclude=.entete .
+        openssl cms -encrypt -binary -aes256 -outform DER \
+          -in "$RUNNER_TEMP/journaux.tar.gz" -out "$RUNNER_TEMP/journaux.cms" \
+          "$GITHUB_ACTION_PATH/../../journaux-ci.crt"
+        rm -rf "$RUNNER_TEMP/journaux.tar.gz" "$dossier"
+        echo "present=true" >> "$GITHUB_OUTPUT"
+
+    - name: Déposer l'artefact chiffré
+      if: steps.chiffrer.outputs.present == 'true'
+      uses: actions/upload-artifact@v7
+      with:
+        name: journaux-chiffres-${{ github.job }}
+        path: ${{ runner.temp }}/journaux.cms
+        retention-days: 1
+        if-no-files-found: error

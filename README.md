@@ -11,3 +11,15 @@ Les versions sont dans l’onglet [Releases](https://github.com/nahim-salami/dou
 ## Signaler un problème
 
 Ouvre une [issue](https://github.com/nahim-salami/douke-releases/issues) en indiquant la version, ton téléphone et ce qui s’est passé.
+
+## Intégration continue
+
+Les workflows de ce dépôt vérifient, compilent et publient Douke à partir de sa source privée, récupérée en lecture seule.
+
+| Workflow | Rôle |
+|---|---|
+| `Vérifier` | Contenu pédagogique, lint, types et tests, à chaque modification de la source |
+| `Compiler` | Compilation Android et web, sans rien publier |
+| `Publier une version` | Vérification, compilation, puis release (brouillon, pré-version ou version) |
+
+Ces journaux sont publics, alors la sortie des commandes n’y apparaît pas : seuls le nom de chaque étape, sa durée et son résultat sont affichés. Le détail est chiffré et lisible uniquement par l’équipe. Les contributions externes ne déclenchent aucun workflow.

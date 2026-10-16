@@ -1,0 +1,49 @@
+# Compile l'app pour vérifier que la compilation passe. Ne publie rien et ne dépose aucun
+# livrable comme artefact (les artefacts d'un dépôt public sont téléchargeables par tous).
+name: Compiler
+run-name: Compiler douke@${{ inputs.ref }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Branche, tag ou commit du dépôt privé
+        type: string
+        default: main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: compiler-${{ inputs.ref }}
+  cancel-in-progress: true
+
+jobs:
+  compiler:
+    name: Compiler
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Récupérer les workflows
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Préparer la source
+        uses: ./.github/actions/preparer
+        with:
+          ref: ${{ inputs.ref }}
+          cle-deploiement: ${{ secrets.DOUKE_SOURCE_DEPLOY_KEY }}
+
+      - name: Compiler
+        uses: ./.github/actions/compiler
+        with:
+          version: dev
+          android-keystore-base64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          android-keystore-password: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          android-key-alias: ${{ secrets.ANDROID_KEY_ALIAS }}
+          android-key-password: ${{ secrets.ANDROID_KEY_PASSWORD }}
+
+      - name: Journaux chiffrés
+        if: always()
+        uses: ./.github/actions/journaux

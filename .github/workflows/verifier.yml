@@ -1,0 +1,88 @@
+# Vérifie la source privée : contenu pédagogique, puis lint, types et tests de l'app.
+# Déclenché par chaque push sur le dépôt privé (workflow declencher-ci.yml), à la main,
+# ou appelé par « Publier une version » avant toute release.
+name: Vérifier
+run-name: Vérifier douke@${{ inputs.ref }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Branche, tag ou commit du dépôt privé
+        type: string
+        default: main
+  workflow_call:
+    inputs:
+      ref:
+        type: string
+        default: main
+    secrets:
+      DOUKE_SOURCE_DEPLOY_KEY:
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verifier-${{ github.workflow }}-${{ inputs.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verifier:
+    name: Vérifier
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Récupérer les workflows
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Préparer la source
+        uses: ./.github/actions/preparer
+        with:
+          ref: ${{ inputs.ref }}
+          cle-deploiement: ${{ secrets.DOUKE_SOURCE_DEPLOY_KEY }}
+
+      # --- Contenu pédagogique (contenu/) -------------------------------------
+      - name: Contenu — graphe des compétences
+        if: hashFiles('source/contenu/competences.json') != ''
+        working-directory: source
+        run: bash ../.github/scripts/discret.sh "Graphe des compétences" node contenu/outils/verifier-graphe.mjs
+
+      - name: Contenu — leçons
+        if: hashFiles('source/contenu/lecons-pilotes/*.json') != ''
+        working-directory: source
+        run: bash ../.github/scripts/discret.sh "Leçons" node contenu/outils/verifier-lecons.mjs
+
+      - name: Contenu — moteur de correction
+        if: hashFiles('source/contenu/outils/tester-moteur.mjs') != ''
+        working-directory: source
+        run: bash ../.github/scripts/discret.sh "Moteur de correction" node contenu/outils/tester-moteur.mjs
+
+      - name: Contenu — lecteur à jour
+        if: hashFiles('source/contenu/outils/construire-lecteur.mjs') != ''
+        working-directory: source
+        run: >-
+          bash ../.github/scripts/discret.sh "Lecteur à jour"
+          bash -c 'node contenu/outils/construire-lecteur.mjs && git diff --exit-code --stat -- contenu/lecteur.html'
+
+      # --- Application (monorepo npm) -----------------------------------------
+      - name: App — lint
+        if: hashFiles('source/package.json') != ''
+        working-directory: source
+        run: bash ../.github/scripts/discret.sh "Lint" npm run lint --if-present
+
+      - name: App — types
+        if: hashFiles('source/package.json') != ''
+        working-directory: source
+        run: bash ../.github/scripts/discret.sh "Types" npm run typecheck --if-present
+
+      - name: App — tests
+        if: hashFiles('source/package.json') != ''
+        working-directory: source
+        run: bash ../.github/scripts/discret.sh "Tests" npm run test --if-present
+
+      - name: Journaux chiffrés
+        if: always()
+        uses: ./.github/actions/journaux

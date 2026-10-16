@@ -1,0 +1,127 @@
+# Vérifie, compile et publie une version de Douke dans les releases de ce dépôt.
+#   brouillon  : release invisible du public, pour contrôler avant de publier
+#   preversion : release publique marquée « pré-version » (tests, pilote)
+#   version    : release publique
+# Une pré-version ou une version exige un APK signé avec le keystore de production.
+name: Publier une version
+run-name: Publier Douke ${{ inputs.version }} (${{ inputs.type }})
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Numéro de version (par exemple 0.1.0 ou 0.1.0-pilote.1)
+        type: string
+        required: true
+      type:
+        description: Type de release
+        type: choice
+        options: [brouillon, preversion, version]
+        default: brouillon
+      ref:
+        description: Branche, tag ou commit du dépôt privé
+        type: string
+        default: main
+      notes:
+        description: Notes de version (nouveautés, en français)
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publier
+  cancel-in-progress: false
+
+jobs:
+  verifier:
+    name: Vérifier
+    uses: ./.github/workflows/verifier.yml
+    with:
+      ref: ${{ inputs.ref }}
+    secrets:
+      DOUKE_SOURCE_DEPLOY_KEY: ${{ secrets.DOUKE_SOURCE_DEPLOY_KEY }}
+
+  publier:
+    name: Compiler et publier
+    needs: verifier
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: write
+    steps:
+      - name: Récupérer les workflows
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Contrôler le numéro de version
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
+            echo "::error::« $VERSION » n'est pas un numéro de version valide (attendu : 1.2.3 ou 1.2.3-pilote.1)."
+            exit 1
+          fi
+          if gh release view "v$VERSION" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            echo "::error::La release v$VERSION existe déjà."
+            exit 1
+          fi
+
+      - name: Préparer la source
+        id: source
+        uses: ./.github/actions/preparer
+        with:
+          ref: ${{ inputs.ref }}
+          cle-deploiement: ${{ secrets.DOUKE_SOURCE_DEPLOY_KEY }}
+
+      - name: Compiler
+        id: compiler
+        uses: ./.github/actions/compiler
+        with:
+          version: ${{ inputs.version }}
+          signature-obligatoire: ${{ inputs.type != 'brouillon' }}
+          android-keystore-base64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          android-keystore-password: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          android-key-alias: ${{ secrets.ANDROID_KEY_ALIAS }}
+          android-key-password: ${{ secrets.ANDROID_KEY_PASSWORD }}
+
+      - name: Créer la release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+          TYPE: ${{ inputs.type }}
+          NOTES: ${{ inputs.notes }}
+          DOSSIER: ${{ steps.compiler.outputs.dossier }}
+          NOMBRE: ${{ steps.compiler.outputs.nombre }}
+        run: |
+          if [ "$NOMBRE" -eq 0 ] && [ "$TYPE" != "brouillon" ]; then
+            echo "::error::Aucun livrable compilé : rien à publier. Seul un brouillon peut être créé sans fichier."
+            exit 1
+          fi
+          options=()
+          case "$TYPE" in
+            brouillon)  options+=(--draft) ;;
+            preversion) options+=(--prerelease) ;;
+          esac
+          fichiers=()
+          if [ "$NOMBRE" -gt 0 ]; then
+            (cd "$DOSSIER" && sha256sum -- * > SHA256SUMS.txt)
+            fichiers=("$DOSSIER"/*)
+          fi
+          [ -n "$NOTES" ] || NOTES="Douke $VERSION."
+          gh release create "v$VERSION" "${fichiers[@]}" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "Douke $VERSION" \
+            --notes "$NOTES" \
+            "${options[@]}"
+          url=$(gh release view "v$VERSION" --repo "$GITHUB_REPOSITORY" --json url -q .url)
+          echo "Release ($TYPE) : $url" >> "$GITHUB_STEP_SUMMARY"
+          echo "Release ($TYPE) : $url"
+
+      - name: Journaux chiffrés
+        if: always()
+        uses: ./.github/actions/journaux
