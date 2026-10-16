@@ -70,7 +70,8 @@ runs:
       if: steps.detecter.outputs.mobile == 'true'
       shell: bash
       working-directory: source/apps/mobile
-      run: bash "$GITHUB_ACTION_PATH/../../scripts/discret.sh" "Android : prebuild Expo" npx expo prebuild --platform android --no-install --clean
+      run: |
+        bash "$GITHUB_ACTION_PATH/../../scripts/discret.sh" "Android : prebuild Expo" npx expo prebuild --platform android --no-install --clean
 
     - name: Compiler l'APK
       if: steps.detecter.outputs.mobile == 'true'
