@@ -1,0 +1,148 @@
+name: Essai de voix (Chatterbox)
+
+# Essai d'écoute avant de choisir la voix de Kodo à accent africain : Chatterbox Multilingual V3
+# (Resemble AI, licence MIT) lit cinq phrases de Douke en imitant la voix de personnes du corpus
+# African Accented French (OpenSLR 57, licence Apache 2.0). Les extraits d'origine et les phrases lues
+# sont publiés sur la branche « audio », dossier essai-chatterbox/. Rien ne vient du dépôt privé.
+
+on:
+  workflow_dispatch:
+    inputs:
+      nombre:
+        description: Nombre de voix à essayer
+        default: '8'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: voix-essai
+  cancel-in-progress: false
+
+env:
+  # Commit du dépôt officiel resemble-ai/chatterbox qui contient le modèle multilingue V3.
+  CHATTERBOX: 5de7a54aa4e5e2baadb0182dde554908b48b85c2
+
+jobs:
+  references:
+    name: Choisir les voix de référence
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    outputs:
+      voix: ${{ steps.liste.outputs.voix }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+
+      - name: Installer les outils audio
+        run: python -m pip install --quiet librosa==0.11.0 soundfile lameenc==1.9.0 "numpy<2"
+
+      - name: Télécharger le corpus African Accented French
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/corpus"
+          cd "$RUNNER_TEMP"
+          curl -sSfL --retry 3 https://www.openslr.org/resources/57/African_Accented_French.tar.gz -o corpus.tar.gz \
+            || curl -sSfL --retry 3 https://openslr.elda.org/resources/57/African_Accented_French.tar.gz -o corpus.tar.gz
+          tar -xzf corpus.tar.gz -C corpus
+          rm corpus.tar.gz
+          find corpus -maxdepth 4 -type d | head -40
+
+      - name: Choisir les voix
+        run: python .github/scripts/essai_chatterbox.py references "$RUNNER_TEMP/corpus" "$RUNNER_TEMP/essai" "${{ inputs.nombre }}"
+
+      - name: Liste des voix
+        id: liste
+        run: echo "voix=$(python -c "import json;print(json.dumps([l['id'] for l in json.load(open('$RUNNER_TEMP/essai/locuteurs.json'))]))")" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: references
+          path: ${{ runner.temp }}/essai
+
+  lire:
+    name: Lire avec la voix ${{ matrix.voix }}
+    needs: references
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        voix: ${{ fromJSON(needs.references.outputs.voix) }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+
+      - name: Installer Chatterbox
+        run: |
+          set -euo pipefail
+          # PyTorch pour processeur seul : évite plusieurs gigaoctets de bibliothèques CUDA inutiles ici.
+          python -m pip install --quiet torch==2.6.0 torchaudio==2.6.0 --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install --quiet "chatterbox-tts @ git+https://github.com/resemble-ai/chatterbox.git@$CHATTERBOX" lameenc==1.9.0
+
+      - name: Mettre en cache le modèle
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/huggingface
+          key: chatterbox-mtl-v3-${{ env.CHATTERBOX }}
+
+      - uses: actions/download-artifact@v7
+        with:
+          name: references
+          path: ${{ runner.temp }}/essai
+
+      - name: Lire les phrases
+        run: python .github/scripts/essai_chatterbox.py voix "$RUNNER_TEMP/essai/${{ matrix.voix }}/reference.wav" voix/essai-phrases.json "$RUNNER_TEMP/sortie/${{ matrix.voix }}"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: lu-${{ matrix.voix }}
+          path: ${{ runner.temp }}/sortie
+
+  publier:
+    name: Publier l'essai
+    needs: [references, lire]
+    if: always() && needs.references.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v7
+        with:
+          path: ${{ runner.temp }}/recu
+
+      - name: Publier sur la branche audio
+        run: |
+          set -euo pipefail
+          git config user.name "douke-voix"
+          git config user.email "voix@douke.invalid"
+          git fetch --depth 1 origin audio
+          git worktree add "$RUNNER_TEMP/audio" origin/audio
+          cd "$RUNNER_TEMP/audio"
+          git switch -c audio
+          rm -rf essai-chatterbox
+          mkdir -p essai-chatterbox
+          cp -r "$RUNNER_TEMP"/recu/lu-*/* essai-chatterbox/ 2>/dev/null || true
+          python - "$RUNNER_TEMP/recu/references" essai-chatterbox "$GITHUB_WORKSPACE/voix/essai-phrases.json" <<'PY'
+          import json, shutil, sys
+          from pathlib import Path
+          refs, sortie, phrases = Path(sys.argv[1]), Path(sys.argv[2]), Path(sys.argv[3])
+          locuteurs = json.loads((refs / "locuteurs.json").read_text(encoding="utf-8"))
+          for l in locuteurs:
+              (sortie / l["id"]).mkdir(exist_ok=True)
+              shutil.copy(refs / l["id"] / "reference.mp3", sortie / l["id"] / "reference.mp3")
+              l["phrases"] = sorted(int(f.stem) for f in (sortie / l["id"]).glob("[0-9]*.mp3"))
+          index = {"modele": "Chatterbox Multilingual V3", "phrases": json.loads(phrases.read_text(encoding="utf-8")), "voix": locuteurs}
+          (sortie / "index.json").write_text(json.dumps(index, ensure_ascii=False, indent=1), encoding="utf-8")
+          PY
+          git add -A essai-chatterbox
+          if git diff --cached --quiet; then echo "Rien de nouveau"; exit 0; fi
+          git commit -q -m "Essai Chatterbox : $(ls essai-chatterbox | grep -c voix) voix"
+          git push -q origin audio
+          echo "Essai publié : essai-chatterbox/ sur la branche audio" >> "$GITHUB_STEP_SUMMARY"
