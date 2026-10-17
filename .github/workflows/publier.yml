@@ -88,6 +88,8 @@ jobs:
           android-key-alias: ${{ secrets.ANDROID_KEY_ALIAS }}
           android-key-password: ${{ secrets.ANDROID_KEY_PASSWORD }}
 
+      # Le tag vise main et non $GITHUB_SHA : si main a changé pendant la compilation (20 min et plus),
+      # viser l'ancien commit, dont les workflows diffèrent, est refusé au GITHUB_TOKEN (HTTP 403).
       - name: Créer la release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -114,7 +116,7 @@ jobs:
           [ -n "$NOTES" ] || NOTES="Douke $VERSION."
           gh release create "v$VERSION" "${fichiers[@]}" \
             --repo "$GITHUB_REPOSITORY" \
-            --target "$GITHUB_SHA" \
+            --target main \
             --title "Douke $VERSION" \
             --notes "$NOTES" \
             "${options[@]}"
