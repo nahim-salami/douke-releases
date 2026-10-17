@@ -67,6 +67,11 @@ jobs:
           bash ../.github/scripts/discret.sh "Lecteur à jour"
           bash -c 'node contenu/outils/construire-lecteur.mjs && git diff --exit-code --stat -- contenu/lecteur.html'
 
+      - name: Contenu — catalogue à jour
+        if: hashFiles('source/contenu/outils/construire-catalogue.mjs') != ''
+        working-directory: source
+        run: bash ../.github/scripts/discret.sh "Catalogue à jour" node contenu/outils/construire-catalogue.mjs --verifier
+
       # --- Application (monorepo npm) -----------------------------------------
       - name: App — lint
         if: hashFiles('source/package.json') != ''
