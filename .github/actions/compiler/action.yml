@@ -116,7 +116,8 @@ runs:
                    "-Pandroid.injected.signing.key.alias=$KEY_ALIAS"
                    "-Pandroid.injected.signing.key.password=$KEY_PASSWORD")
           fi
-          # Seulement les architectures ARM des téléphones : x86 et x86_64 doublaient la taille de l'APK.
+          # Seulement les architectures ARM des telephones (x86 et x86_64 doublaient la taille).
+          # Attention : ce script est entre apostrophes, aucune apostrophe dans ces lignes.
           ./gradlew assembleRelease bundleRelease --no-daemon --console=plain \
             -PreactNativeArchitectures=armeabi-v7a,arm64-v8a "${args[@]}"
         '
