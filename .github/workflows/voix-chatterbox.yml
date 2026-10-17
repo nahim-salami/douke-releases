@@ -1,0 +1,150 @@
+name: Voix africaines de Douke (Chatterbox)
+
+# Fait lire tous les textes de l'app (consignes, explications, phrases fixes) par Chatterbox
+# Multilingual V3 (Resemble AI, licence MIT) dans les huit voix à accent africain retenues à l'essai
+# (extraits du corpus African Accented French, OpenSLR 57, licence Apache 2.0), et publie un MP3 par
+# texte sur la branche « audio », dossiers afrique1 à afrique8. Chatterbox est lent sur processeur :
+# le travail est partagé entre plusieurs jobs, et une nouvelle exécution ne lit que les textes manquants.
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Branche, tag ou commit du dépôt privé
+        default: main
+      voix:
+        description: Voix à générer (numéros, en liste JSON)
+        default: '[1, 2, 3, 4, 5, 6, 7, 8]'
+      essai:
+        description: Exécution de l'essai d'où viennent les extraits de référence (la première fois seulement)
+        default: '39050909982'
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: voix-chatterbox
+  cancel-in-progress: false
+
+env:
+  CHATTERBOX: 5de7a54aa4e5e2baadb0182dde554908b48b85c2
+  PARTS: 4
+
+jobs:
+  references:
+    name: Extraits de référence
+    runs-on: ubuntu-latest
+    steps:
+      - name: Garder les extraits dans la release « voix-references »
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ESSAI: ${{ inputs.essai }}
+        run: |
+          set -euo pipefail
+          if gh release view voix-references -R "$GITHUB_REPOSITORY" > /dev/null 2>&1; then echo "Release déjà là"; exit 0; fi
+          gh run download "$ESSAI" -R "$GITHUB_REPOSITORY" -n references -D brut
+          mkdir refs
+          for i in 1 2 3 4 5 6 7 8; do cp "brut/voix$i/reference.wav" "refs/afrique$i.wav"; done
+          cp brut/locuteurs.json refs/
+          gh release create voix-references refs/* -R "$GITHUB_REPOSITORY" --latest=false \
+            --title "Extraits de référence des voix africaines" \
+            --notes "Extraits du corpus African Accented French (OpenSLR 57, licence Apache 2.0) qui servent de modèle de voix à Chatterbox. afriqueN.wav correspond à la voix N de l'essai."
+
+  lire:
+    name: Voix ${{ matrix.voix }}, part ${{ matrix.part }}
+    needs: references
+    runs-on: ubuntu-latest
+    timeout-minutes: 345
+    strategy:
+      fail-fast: false
+      max-parallel: 16
+      matrix:
+        voix: ${{ fromJSON(inputs.voix) }}
+        part: [0, 1, 2, 3]
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Préparer la source
+        uses: ./.github/actions/preparer
+        with:
+          ref: ${{ inputs.ref }}
+          cle-deploiement: ${{ secrets.DOUKE_SOURCE_DEPLOY_KEY }}
+
+      - name: Lister les textes à lire
+        run: bash .github/scripts/discret.sh "Textes à lire" node source/contenu/outils/textes-a-lire.mjs "$RUNNER_TEMP/textes.json"
+
+      - name: Lister les fichiers déjà publiés
+        run: |
+          set -euo pipefail
+          git fetch --depth 1 origin audio
+          git ls-tree --name-only origin/audio "afrique${{ matrix.voix }}/" | sed 's#.*/##; s#\.mp3$##' > "$RUNNER_TEMP/existants.txt" || true
+          echo "$(wc -l < "$RUNNER_TEMP/existants.txt") fichiers déjà publiés pour cette voix"
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+
+      - name: Installer Chatterbox
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet torch==2.6.0 torchaudio==2.6.0 --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install --quiet "chatterbox-tts @ git+https://github.com/resemble-ai/chatterbox.git@$CHATTERBOX" lameenc==1.9.0
+
+      - name: Mettre en cache le modèle
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/huggingface
+          key: chatterbox-mtl-v3-${{ env.CHATTERBOX }}
+
+      - name: Télécharger l'extrait de référence
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release download voix-references -R "$GITHUB_REPOSITORY" -p "afrique${{ matrix.voix }}.wav" -D "$RUNNER_TEMP"
+
+      - name: Lire les textes
+        run: >
+          bash .github/scripts/discret.sh "Synthèse" python .github/scripts/synthese_chatterbox.py
+          "$RUNNER_TEMP/textes.json" "$RUNNER_TEMP/afrique${{ matrix.voix }}.wav"
+          "$RUNNER_TEMP/sortie/afrique${{ matrix.voix }}" ${{ matrix.part }} "$PARTS" "$RUNNER_TEMP/existants.txt" 320
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: audio-afrique${{ matrix.voix }}-${{ matrix.part }}
+          path: ${{ runner.temp }}/sortie
+          if-no-files-found: ignore
+          retention-days: 3
+
+  publier:
+    name: Publier les fichiers audio
+    needs: [references, lire]
+    if: always() && needs.references.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v7
+        with:
+          pattern: audio-*
+          merge-multiple: true
+          path: ${{ runner.temp }}/recu
+
+      - name: Publier sur la branche audio
+        run: |
+          set -euo pipefail
+          git config user.name "douke-voix"
+          git config user.email "voix@douke.invalid"
+          git fetch --depth 1 origin audio
+          git worktree add "$RUNNER_TEMP/audio" origin/audio
+          cd "$RUNNER_TEMP/audio"
+          git switch -c audio
+          if [ -d "$RUNNER_TEMP/recu" ]; then cp -r "$RUNNER_TEMP"/recu/* .; fi
+          git add -A
+          if git diff --cached --quiet; then echo "Rien de nouveau"; exit 0; fi
+          nombre=$(git diff --cached --name-only | wc -l)
+          git commit -q -m "Voix africaines : $nombre fichiers"
+          git push -q origin audio
+          {
+            echo "$nombre fichiers publiés"
+            for d in afrique*; do echo "- $d : $(ls "$d" | wc -l) fichiers"; done
+          } >> "$GITHUB_STEP_SUMMARY"
