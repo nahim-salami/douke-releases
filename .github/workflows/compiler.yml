@@ -39,6 +39,7 @@ jobs:
         uses: ./.github/actions/compiler
         with:
           version: dev
+          api-url: ${{ vars.DOUKE_API_URL }}
           android-keystore-base64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           android-keystore-password: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           android-key-alias: ${{ secrets.ANDROID_KEY_ALIAS }}

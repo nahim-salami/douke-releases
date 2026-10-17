@@ -9,6 +9,10 @@ inputs:
     description: Numéro de version utilisé dans le nom des fichiers
     required: false
     default: dev
+  api-url:
+    description: Adresse de l'API intégrée à l'app (EXPO_PUBLIC_API_URL) ; vide = app en mode local
+    required: false
+    default: ""
   signature-obligatoire:
     description: "« true » pour refuser un APK signé avec la clé de débogage"
     required: false
@@ -70,6 +74,8 @@ runs:
       if: steps.detecter.outputs.mobile == 'true'
       shell: bash
       working-directory: source/apps/mobile
+      env:
+        EXPO_PUBLIC_API_URL: ${{ inputs.api-url }}
       run: |
         bash "$GITHUB_ACTION_PATH/../../scripts/discret.sh" "Android : prebuild Expo" npx expo prebuild --platform android --no-install --clean
 
@@ -83,9 +89,11 @@ runs:
         KEY_ALIAS: ${{ inputs.android-key-alias }}
         KEY_PASSWORD: ${{ inputs.android-key-password }}
         SIGNATURE_OBLIGATOIRE: ${{ inputs.signature-obligatoire }}
+        EXPO_PUBLIC_API_URL: ${{ inputs.api-url }}
         VERSION: ${{ inputs.version }}
         DOSSIER: ${{ steps.detecter.outputs.dossier }}
       run: |
+        if [ -n "$EXPO_PUBLIC_API_URL" ]; then echo "API intégrée : $EXPO_PUBLIC_API_URL"; else echo "::notice::Pas d'adresse d'API (variable DOUKE_API_URL) : l'app sera en mode local."; fi
         if [ -n "$KEYSTORE_B64" ]; then
           echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/douke.keystore"
           export KEYSTORE_FILE="$RUNNER_TEMP/douke.keystore"
