@@ -13,7 +13,6 @@ Deux étapes, lancées par le workflow « Essai de voix (Chatterbox) » :
 
 import collections
 import json
-import re
 import sys
 from pathlib import Path
 
@@ -38,11 +37,12 @@ def mp3(audio: np.ndarray, taux: int, fichier: Path) -> None:
 
 
 def personne(chemin: Path, corpus: Path) -> str:
-    """Identifiant de la personne qui parle : son dossier, ou le préfixe du nom de fichier
-    quand plusieurs personnes partagent un dossier (« dossier/F12_003.wav » → « dossier/F12 »)."""
-    dossier = chemin.parent.relative_to(corpus).as_posix()
-    prefixe = re.sub(r"[_-]?\d+$", "", chemin.stem)
-    return f"{dossier}/{prefixe}" if prefixe and prefixe != chemin.stem else dossier
+    """« partie/personne » d'un enregistrement. Le corpus range les fichiers ainsi :
+    African_Accented_French/speech/<lot>/<partie>/…/<personne>/<fichier>.wav, et une même personne
+    peut avoir plusieurs dossiers (phrases lues, réponses) : c'est le nom du dossier qui l'identifie."""
+    morceaux = chemin.relative_to(corpus).parts
+    partie = morceaux[3] if len(morceaux) > 4 and morceaux[1] == "speech" else morceaux[0]
+    return f"{partie}/{chemin.parent.name}"
 
 
 def proprete(audio: np.ndarray, taux: int) -> float:
