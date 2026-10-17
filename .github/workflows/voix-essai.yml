@@ -27,7 +27,7 @@ jobs:
   references:
     name: Choisir les voix de référence
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 120
     outputs:
       voix: ${{ steps.liste.outputs.voix }}
     steps:
@@ -38,18 +38,31 @@ jobs:
           python-version: '3.11'
 
       - name: Installer les outils audio
-        run: python -m pip install --quiet librosa==0.11.0 soundfile lameenc==1.9.0 "numpy<2"
+        run: |
+          python -m pip install --quiet librosa==0.11.0 soundfile lameenc==1.9.0 "numpy<2"
+          sudo apt-get -qq install -y aria2 > /dev/null
+
+      # Les serveurs d'OpenSLR sont lents : l'archive (1,8 Go) est gardée en cache pour les essais suivants.
+      - name: Mettre en cache le corpus
+        uses: actions/cache@v6
+        with:
+          path: ${{ runner.temp }}/archive
+          key: openslr-57-v1
 
       - name: Télécharger le corpus African Accented French
         run: |
           set -euo pipefail
-          mkdir -p "$RUNNER_TEMP/corpus"
-          cd "$RUNNER_TEMP"
-          curl -sSfL --retry 3 https://www.openslr.org/resources/57/African_Accented_French.tar.gz -o corpus.tar.gz \
-            || curl -sSfL --retry 3 https://openslr.elda.org/resources/57/African_Accented_French.tar.gz -o corpus.tar.gz
-          tar -xzf corpus.tar.gz -C corpus
-          rm corpus.tar.gz
-          find corpus -maxdepth 4 -type d | head -40
+          mkdir -p "$RUNNER_TEMP/corpus" "$RUNNER_TEMP/archive"
+          cd "$RUNNER_TEMP/archive"
+          if [ ! -f corpus.tar.gz ]; then
+            # Seize connexions réparties sur trois miroirs.
+            chemin=resources/57/African_Accented_French.tar.gz
+            aria2c -q -x 16 -s 16 -k 8M --max-tries=10 --retry-wait=5 -o corpus.tar.gz \
+              "https://openslr.trmal.net/$chemin" "https://www.openslr.org/$chemin" "https://openslr.elda.org/$chemin"
+          fi
+          ls -la corpus.tar.gz
+          tar -xzf corpus.tar.gz -C "$RUNNER_TEMP/corpus"
+          find "$RUNNER_TEMP/corpus" -maxdepth 4 -type d | head -40
 
       - name: Choisir les voix
         run: python .github/scripts/essai_chatterbox.py references "$RUNNER_TEMP/corpus" "$RUNNER_TEMP/essai" "${{ inputs.nombre }}"
