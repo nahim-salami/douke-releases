@@ -10,9 +10,9 @@
  "voix": [
   {
    "id": "voix1",
-   "partie": "African_Accented_French",
-   "duree": 852,
-   "proprete": 51.5,
+   "partie": "yaounde",
+   "duree": 435,
+   "proprete": 51.4,
    "phrases": [
     1,
     2,
@@ -23,9 +23,9 @@
   },
   {
    "id": "voix2",
-   "partie": "African_Accented_French",
-   "duree": 262,
-   "proprete": 50.8,
+   "partie": "yaounde",
+   "duree": 838,
+   "proprete": 50.6,
    "phrases": [
     1,
     2,
@@ -36,9 +36,74 @@
   },
   {
    "id": "voix3",
-   "partie": "African_Accented_French",
-   "duree": 159,
-   "proprete": 50.8,
+   "partie": "yaounde",
+   "duree": 424,
+   "proprete": 48.6,
+   "phrases": [
+    1,
+    2,
+    3,
+    4,
+    5
+   ]
+  },
+  {
+   "id": "voix4",
+   "partie": "ca16",
+   "duree": 306,
+   "proprete": 43.9,
+   "phrases": [
+    1,
+    2,
+    3,
+    4,
+    5
+   ]
+  },
+  {
+   "id": "voix5",
+   "partie": "ca16",
+   "duree": 241,
+   "proprete": 41.1,
+   "phrases": [
+    1,
+    2,
+    3,
+    4,
+    5
+   ]
+  },
+  {
+   "id": "voix6",
+   "partie": "ca16",
+   "duree": 213,
+   "proprete": 39.1,
+   "phrases": [
+    1,
+    2,
+    3,
+    4,
+    5
+   ]
+  },
+  {
+   "id": "voix7",
+   "partie": "niger_west_african_fr",
+   "duree": 168,
+   "proprete": 37.8,
+   "phrases": [
+    1,
+    2,
+    3,
+    4,
+    5
+   ]
+  },
+  {
+   "id": "voix8",
+   "partie": "niger_west_african_fr",
+   "duree": 323,
+   "proprete": 37.6,
    "phrases": [
     1,
     2,
