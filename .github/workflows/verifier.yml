@@ -32,6 +32,18 @@ jobs:
     name: Vérifier
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    # Base PostgreSQL éphémère pour les tests de l'API (détruite à la fin du job).
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: douke
+          POSTGRES_DB: douke_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 12
+    env:
+      DATABASE_URL: postgres://postgres:douke@localhost:5432/douke_test
     steps:
       - name: Récupérer les workflows
         uses: actions/checkout@v7
