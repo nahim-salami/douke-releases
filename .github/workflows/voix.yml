@@ -1,0 +1,109 @@
+name: Voix de Kodo
+
+# Fait lire à Kodo les consignes, explications et phrases fixes de l'app avec une voix de synthèse
+# neuronale (Piper), et publie un MP3 par texte sur la branche « audio » de ce dépôt.
+# L'app télécharge ces fichiers ; sans eux, elle reprend la voix du téléphone.
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Branche, tag ou commit du dépôt privé
+        default: main
+      voix:
+        description: Voix à générer (siwis, ou une voix publiée en release « voix-<nom> »)
+        default: siwis
+
+permissions:
+  contents: write
+
+concurrency:
+  group: voix
+  cancel-in-progress: false
+
+jobs:
+  generer:
+    name: Générer la voix
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Récupérer ce dépôt
+        uses: actions/checkout@v7
+
+      - name: Préparer la source
+        uses: ./.github/actions/preparer
+        with:
+          ref: ${{ inputs.ref }}
+          cle-deploiement: ${{ secrets.DOUKE_SOURCE_DEPLOY_KEY }}
+
+      - name: Lister les textes à lire
+        run: bash .github/scripts/discret.sh "Textes à lire" node source/contenu/outils/textes-a-lire.mjs "$RUNNER_TEMP/textes.json"
+
+      - name: Installer Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+
+      - name: Installer Piper
+        run: bash .github/scripts/discret.sh "Piper" python -m pip install --quiet piper-tts==1.8.0 lameenc==1.9.0
+
+      - name: Mettre en cache le modèle de voix
+        uses: actions/cache@v6
+        with:
+          path: ${{ runner.temp }}/modele
+          key: voix-${{ inputs.voix }}-v1
+
+      - name: Télécharger le modèle de voix
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VOIX: ${{ inputs.voix }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/modele"
+          cd "$RUNNER_TEMP/modele"
+          if [ -f "$VOIX.onnx" ]; then echo "Modèle en cache"; exit 0; fi
+          if [ "$VOIX" = "siwis" ]; then
+            # Voix « siwis » de Piper (données SIWIS, licence CC-BY 4.0).
+            base=https://huggingface.co/rhasspy/piper-voices/resolve/main/fr/fr_FR/siwis/medium
+            curl -sSfL "$base/fr_FR-siwis-medium.onnx" -o siwis.onnx
+            curl -sSfL "$base/fr_FR-siwis-medium.onnx.json" -o siwis.onnx.json
+          else
+            # Voix entraînée pour Douke, publiée en release « voix-<nom> » (fichiers <nom>.onnx et <nom>.onnx.json).
+            gh release download "voix-$VOIX" -R "$GITHUB_REPOSITORY" -p "$VOIX.onnx*" -D .
+          fi
+          ls -la
+
+      - name: Récupérer la branche audio
+        run: |
+          set -euo pipefail
+          git config user.name "douke-voix"
+          git config user.email "voix@douke.invalid"
+          if git ls-remote --exit-code --heads origin audio > /dev/null; then
+            git fetch --depth 1 origin audio
+            git worktree add "$RUNNER_TEMP/audio" origin/audio
+            git -C "$RUNNER_TEMP/audio" switch -c audio
+          else
+            git worktree add --orphan -b audio "$RUNNER_TEMP/audio"
+          fi
+
+      - name: Faire lire les textes
+        env:
+          VOIX: ${{ inputs.voix }}
+        run: bash .github/scripts/discret.sh "Synthèse" python .github/scripts/synthese.py "$RUNNER_TEMP/textes.json" "$RUNNER_TEMP/modele/$VOIX.onnx" "$RUNNER_TEMP/audio/$VOIX"
+
+      - name: Publier les fichiers audio
+        env:
+          VOIX: ${{ inputs.voix }}
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/audio"
+          git add -A
+          if git diff --cached --quiet; then echo "Rien de nouveau"; exit 0; fi
+          nombre=$(git diff --cached --name-only | wc -l)
+          git commit -q -m "Voix $VOIX : $nombre fichiers"
+          git push -q origin audio
+          echo "Voix $VOIX : $nombre fichiers publiés" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Chiffrer les journaux
+        if: always()
+        uses: ./.github/actions/journaux
