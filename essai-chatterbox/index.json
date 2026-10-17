@@ -1,0 +1,51 @@
+{
+ "modele": "Chatterbox Multilingual V3",
+ "phrases": [
+  "Salut, moi c’est Douk! On écrit ta première page web?",
+  "Bien joué, continue!",
+  "Tantie Rose veut mettre le menu de son maquis en ligne. On commence par le titre et le texte. Un titre se met dans balise h1. Un paragraphe se met dans balise p. Le navigateur affiche le titre en gros et laisse un espace entre les paragraphes. Quelle balise contient le titre?",
+  "balise h1 est le titre principal. Le texte qui suit est dans un paragraphe balise p.",
+  "Leçon terminée! Bravo!"
+ ],
+ "voix": [
+  {
+   "id": "voix1",
+   "partie": "African_Accented_French",
+   "duree": 852,
+   "proprete": 51.5,
+   "phrases": [
+    1,
+    2,
+    3,
+    4,
+    5
+   ]
+  },
+  {
+   "id": "voix2",
+   "partie": "African_Accented_French",
+   "duree": 262,
+   "proprete": 50.8,
+   "phrases": [
+    1,
+    2,
+    3,
+    4,
+    5
+   ]
+  },
+  {
+   "id": "voix3",
+   "partie": "African_Accented_French",
+   "duree": 159,
+   "proprete": 50.8,
+   "phrases": [
+    1,
+    2,
+    3,
+    4,
+    5
+   ]
+  }
+ ]
+}
