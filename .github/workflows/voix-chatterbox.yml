@@ -15,6 +15,9 @@ on:
       voix:
         description: Voix à générer (numéros, en liste JSON)
         default: '[1, 2, 3, 4, 5, 6, 7, 8]'
+      parts:
+        description: Nombre de parts par voix (chaque part tourne au plus 5 h 20 sur un job)
+        default: '8'
       essai:
         description: Exécution de l'essai d'où viennent les extraits de référence (la première fois seulement)
         default: '39050909982'
@@ -29,13 +32,19 @@ concurrency:
 
 env:
   CHATTERBOX: 5de7a54aa4e5e2baadb0182dde554908b48b85c2
-  PARTS: 4
+  PARTS: ${{ inputs.parts }}
 
 jobs:
   references:
     name: Extraits de référence
     runs-on: ubuntu-latest
+    outputs:
+      parts: ${{ steps.parts.outputs.liste }}
     steps:
+      - name: Liste des parts
+        id: parts
+        run: echo "liste=$(python3 -c "import json; print(json.dumps(list(range(int('$PARTS')))))")" >> "$GITHUB_OUTPUT"
+
       - name: Garder les extraits dans la release « voix-references »
         env:
           GH_TOKEN: ${{ github.token }}
@@ -61,7 +70,7 @@ jobs:
       max-parallel: 16
       matrix:
         voix: ${{ fromJSON(inputs.voix) }}
-        part: [0, 1, 2, 3]
+        part: ${{ fromJSON(needs.references.outputs.parts) }}
     steps:
       - uses: actions/checkout@v7
 
